@@ -1,5 +1,5 @@
 # Overview
-Simple little http benchmarker, no libraries just sockets and pthreads. Soon will switch over to asynchronous socket solution in combination with threads.
+Simple little http benchmarker, no libraries just sockets and pthreads. Soon will switch over to asynchronous socket solution in combination with threads. Obviously only for linux.
 
 ## Usage
 Set up by default for class project, no args
