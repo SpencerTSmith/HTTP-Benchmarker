@@ -1,5 +1,5 @@
 build:
-	gcc -Wall -Wextra -g *.c -o client
+	gcc -Wall -Wextra -g -std=gnu99 ./src/*.c -o client
 
 run: build
 	./client
