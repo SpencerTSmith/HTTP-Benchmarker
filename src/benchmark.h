@@ -9,6 +9,8 @@ typedef enum {
     EXT_ERR_SERVER_ADDRESS,
     EXT_ERR_CONNECTION,
     EXT_ERR_REQUEST_FAIL,
+    EXT_ERR_THREAD_SPAWN,
+    EXT_ERR_THREAD_JOIN,
     NUM_EXT_CODE,
 } exit_code_e;
 

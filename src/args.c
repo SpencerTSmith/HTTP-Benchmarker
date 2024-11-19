@@ -4,17 +4,17 @@
 #include <string.h>
 
 static arg_e arg_type(const char *argument) {
-    if (strcmp(argument, "-j")) {
+    if (strcmp(argument, "-j") == 0)
         return ARG_N_THREADS;
-    } else if (strcmp(argument, "-n")) {
+    else if (strcmp(argument, "-n") == 0)
         return ARG_N_REQUESTS;
-    } else if (strcmp(argument, "-r")) {
+    else if (strcmp(argument, "-r") == 0)
         return ARG_CUSTOM_REQUEST;
-    }
+    else if (strcmp(argument, "-s") == 0)
+        return ARG_CUSTOM_HOST;
 
-    else {
+    else
         return -1;
-    }
 };
 
 void arg_parse(int argc, char **argv, args_t *args) {
@@ -28,7 +28,6 @@ void arg_parse(int argc, char **argv, args_t *args) {
         case ARG_N_THREADS:
             if ((i + 1) < argc) {
                 args->n_threads = atoi(argv[i + 1]);
-                i++; // can skip the next one
             } else {
                 fprintf(stderr, "Number of threads unspecified");
             }
@@ -37,7 +36,6 @@ void arg_parse(int argc, char **argv, args_t *args) {
         case ARG_N_REQUESTS:
             if ((i + 1) < argc) {
                 args->n_requests = atoi(argv[i + 1]);
-                i++; // can skip the next one
             } else {
                 fprintf(stderr, "Number of requests unspecified");
             }

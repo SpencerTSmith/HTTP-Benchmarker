@@ -2,7 +2,7 @@
 #include "benchmark.h"
 
 int main(int argc, char **argv) {
-    // sensible defaults, no threads spawned
+    // sensible defaults
     args_t args = {
         .n_requests = 1000,
         .n_threads = 4,

@@ -11,10 +11,10 @@ typedef struct {
     int n_requests;
     host_t host;
     request_t request;
-    double batch_time;
+    struct timespec batch_time;
 } worker_args_t;
 
-void *bench_worker(void *worker_args) {
+static void *bench_worker(void *worker_args) {
     worker_args_t *args = (worker_args_t *)worker_args;
 
     // get socket
@@ -30,8 +30,7 @@ void *bench_worker(void *worker_args) {
         .sin_port = htons(args->host.port), // convert to how the network defines port #
     };
 
-    // convert to binary format of ip address, probably not nessecary if just connecting to your own
-    // machine
+    // convert to binary format of ip address
     if (inet_pton(AF_INET, args->host.ip, &server_address.sin_addr) <= 0) {
         perror("Conversion of server address failed");
         exit(EXT_ERR_SERVER_ADDRESS);
@@ -60,13 +59,14 @@ void *bench_worker(void *worker_args) {
             perror("Recieve response failed");
         } else {
             response[n_bytes_response] = '\0'; // terminating character
-            printf("Response received: %s\n", response);
+            // printf("Response received: %s\n", response);
         }
     }
 
     struct timespec end_batch_time;
     clock_gettime(CLOCK_MONOTONIC, &end_batch_time);
-    args->batch_time = end_batch_time.tv_sec - start_batch_time.tv_sec;
+    args->batch_time.tv_sec = (end_batch_time.tv_sec - start_batch_time.tv_sec);
+    args->batch_time.tv_nsec = (end_batch_time.tv_nsec - start_batch_time.tv_nsec);
 
     close(socket_fd);
     return NULL;
@@ -80,7 +80,7 @@ void bench_http_request(const args_t *args) {
             .n_requests = args->n_requests,
             .host = args->host,
             .request = args->request,
-            .batch_time = 0,
+            .batch_time = {0},
         });
         return;
     }
@@ -89,20 +89,32 @@ void bench_http_request(const args_t *args) {
     pthread_t workers[args->n_threads];
     int n_reqs_per_worker = args->n_requests / args->n_threads;
 
-    worker_args_t worker_args = {
-        .n_requests = n_reqs_per_worker,
-        .host = args->host,
-        .request = args->request,
-        .batch_time = 0,
-    };
+    worker_args_t worker_args[args->n_threads];
 
     for (int i = 0; i < args->n_threads; i++) {
-        if (pthread_create(&workers[i], NULL, &bench_worker, &worker_args) != 0) {
+        worker_args[i] = (worker_args_t){
+            .n_requests = n_reqs_per_worker,
+            .host = args->host,
+            .request = args->request,
+            .batch_time = {0},
+        };
+
+        if (pthread_create(&workers[i], NULL, &bench_worker, &worker_args[i]) != 0) {
             perror("Worker thread spawn failed");
+            exit(EXT_ERR_THREAD_SPAWN);
         }
     }
 
     for (int i = 0; i < args->n_threads; i++) {
-        pthread_join(workers[i], NULL);
+        if (pthread_join(workers[i], NULL) != 0) {
+            perror("Worker thread join failed");
+            exit(EXT_ERR_THREAD_JOIN);
+        }
+    }
+
+    for (int i = 0; i < args->n_threads; i++) {
+        printf("Worker %d stats\n", i);
+        printf("	Request batch time : %d requests in % ld.%ld seconds\n", n_reqs_per_worker,
+               worker_args[i].batch_time.tv_sec, worker_args[i].batch_time.tv_nsec);
     }
 }
