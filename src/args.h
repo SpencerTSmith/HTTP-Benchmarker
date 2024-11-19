@@ -15,6 +15,7 @@ typedef struct {
 } host_t;
 
 typedef struct {
+    // this maybe should be dynamic
     char content[512];
     int length;
 } request_t;
