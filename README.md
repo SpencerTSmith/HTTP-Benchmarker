@@ -1,5 +1,11 @@
 # Overview
-Simple little http benchmarker, no libraries just sockets and pthreads. Soon will switch over to asynchronous sockets in combination with threads. Only for linux.
+Simple little http benchmarker, no libraries just sockets and pthreads. Soon will switch over to asynchronous sockets in combination with threads.
+
+## Build
+To build and run with defaults described below. Linux only.
+```
+make bench
+```
 
 ## Usage
 Set up by default for class project default port on local machine, no args gives default of 1000 requests divided amongst 4 workers 
