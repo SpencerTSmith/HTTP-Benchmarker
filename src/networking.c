@@ -20,8 +20,7 @@ void send_http_request(request_t request, socket_data_t *socket_data) {
     }
 
     // hmm should this be before we send the request... or after?
-    // this is very ugly sorry
-    clock_gettime(CLOCK_MONOTONIC, &socket_data->recent_start_time);
+    clock_gettime(CLOCK_MONOTONIC, &socket_data->timings[socket_data->current_request].start_time);
 }
 
 void recv_http_response(socket_data_t *socket_data) {
@@ -37,16 +36,17 @@ void recv_http_response(socket_data_t *socket_data) {
     struct timespec end_time;
     clock_gettime(CLOCK_MONOTONIC, &end_time);
 
-    double latency = (end_time.tv_sec - socket_data->recent_start_time.tv_sec) +
-                     (end_time.tv_nsec - socket_data->recent_start_time.tv_nsec) / 1e9;
+    double latency =
+        (end_time.tv_sec - socket_data->timings[socket_data->current_response].start_time.tv_sec) +
+        (end_time.tv_nsec -
+         socket_data->timings[socket_data->current_response].start_time.tv_nsec) /
+            1e9;
 
-    socket_data->latencies[socket_data->current_request] = latency;
+    socket_data->timings[socket_data->current_response].latency = latency;
 
     if (verbose_flag()) {
         response[n_bytes_response] = '\0';
-        // printf("\nResponse:\n%s", response);
-        printf("Socket %d: Request %d latency: %.6f seconds\n", socket_data->fd,
-               socket_data->current_request, latency);
+        printf("\nResponse:\n%s", response);
     }
 }
 

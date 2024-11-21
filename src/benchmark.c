@@ -101,26 +101,26 @@ void bench_http_request(const args_t *args) {
 
         double avg_latency_thread = 0.0;
         for (int s = 0; s < args->n_concurrent; s++) {
-            printf("	Socket %d stats ----", s);
+            printf("	Socket %d stats --\n", s);
 
             double avg_latency_socket = 0.0f;
             for (int i = 0; i < n_reqs_per_socket; i++) {
-                avg_latency_socket += worker_args[t].socket_datas[s].latencies[i];
+                avg_latency_socket += worker_args[t].socket_datas[s].timings[i].latency;
             }
             avg_latency_socket /= n_reqs_per_socket;
 
-            printf(" Average request latency : %0.15f seconds\n", avg_latency_socket);
+            printf("	  Average request latency : %0.15f seconds\n", avg_latency_socket);
 
             avg_latency_thread += avg_latency_socket;
 
             // we can free that sockets timing data now
-            free(worker_args[t].socket_datas[s].latencies);
+            free(worker_args[t].socket_datas[s].timings);
         }
-        avg_latency_thread /= n_reqs_per_worker;
+        avg_latency_thread /= args->n_concurrent;
 
         double throughput_thread = n_reqs_per_worker / worker_args[t].batch_time;
 
-        printf("	Request batch time : %d requests in %0.9f seconds\n", n_reqs_per_worker,
+        printf("\n	Request batch time : %d requests in %0.9f seconds\n", n_reqs_per_worker,
                worker_args[t].batch_time);
         printf("	Average request latency : %0.9f seconds\n", avg_latency_thread);
         printf("	Request throughput : %0.9f requests/second\n", throughput_thread);
@@ -150,11 +150,12 @@ static void *bench_worker(void *worker_args) {
         args->socket_datas[i].fd = get_connected_socket(args->host);
 
         args->socket_datas[i].current_request = 0;
+        args->socket_datas[i].current_response = 0;
         args->socket_datas[i].n_requests = n_reqs_per_socket;
 
         // runtime dependent num of requsts per socket
-        args->socket_datas[i].latencies = calloc(n_reqs_per_socket, sizeof(double));
-        if (args->socket_datas[i].latencies == NULL) {
+        args->socket_datas[i].timings = calloc(n_reqs_per_socket, sizeof(request_timing_t));
+        if (args->socket_datas[i].timings == NULL) {
             fprintf(stderr, "Timing data memory allocation failed");
             exit(EXT_ERROR_TIMING_DATA_ALLOCATE);
         }
@@ -200,17 +201,17 @@ static void *bench_worker(void *worker_args) {
                 // we have received a response
             } else if (events[e].events & EPOLLIN) {
 
-                printf("here");
                 // find the socket we got an event for...
-                // TODO(spencer): this might benefit from hashing
+                // TODO(spencer): this might benefit from hashing at larger # of sockets
                 for (int i = 0; i < args->n_concurrent; i++) {
 
                     if (args->socket_datas[i].fd == event_socket_fd) {
                         // this will also calc the timing
                         recv_http_response(&args->socket_datas[i]);
+                        args->socket_datas[i].current_response++;
 
                         // have received all messages... close
-                        if (args->socket_datas[i].current_request >=
+                        if (args->socket_datas[i].current_response >=
                             args->socket_datas[i].n_requests) {
                             epoll_ctl(epoll_fd, EPOLL_CTL_DEL, event_socket_fd, NULL);
                             close(event_socket_fd);
@@ -218,14 +219,6 @@ static void *bench_worker(void *worker_args) {
                             break;
                         }
 
-                        // this will also calc the timing
-                        send_http_request(args->request, &args->socket_datas[i]);
-
-                        // I think I like this decrement here (not in the send_http func) so
-                        // it's more obvious what its doing
-                        args->socket_datas[i].current_request++;
-
-                        // don't have to go through the rest of the socket_fds
                         break;
                     }
                 }
