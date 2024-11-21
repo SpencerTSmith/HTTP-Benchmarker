@@ -1,9 +1,12 @@
 #ifndef ARG_H
 #define ARG_H
 
+#include "networking.h"
+
 typedef enum {
     ARG_N_THREADS,
     ARG_N_REQUESTS,
+    ARG_N_CONCURRENTS,
     ARG_CUSTOM_REQUEST,
     ARG_CUSTOM_HOST,
     ARG_VERBOSE,
@@ -11,19 +14,9 @@ typedef enum {
 } arg_e;
 
 typedef struct {
-    char ip[16];
-    int port;
-} host_t;
-
-typedef struct {
-    // this maybe should be dynamic
-    char *content;
-    int length;
-} request_t;
-
-typedef struct {
     int n_threads;
     int n_requests;
+    int n_concurrent;
     host_t host;
     request_t request;
 } args_t;

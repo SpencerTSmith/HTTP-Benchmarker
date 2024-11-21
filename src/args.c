@@ -1,7 +1,8 @@
-#include "args.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "args.h"
 
 static int G_verbose_flag = 0;
 // need this because we're allocating that memory
@@ -15,6 +16,8 @@ static arg_e arg_type(const char *argument) {
         return ARG_N_THREADS;
     else if (strcmp(argument, "-n") == 0)
         return ARG_N_REQUESTS;
+    else if (strcmp(argument, "-c") == 0)
+        return ARG_N_CONCURRENTS;
     else if (strcmp(argument, "-r") == 0)
         return ARG_CUSTOM_REQUEST;
     else if (strcmp(argument, "-s") == 0)
@@ -39,8 +42,13 @@ void arg_parse(int argc, char **argv, args_t *args) {
                 fprintf(stderr, "Number of threads unspecified, assuming default\n");
                 continue;
             }
+            int n_threads = atoi(argv[i + 1]);
+            if (n_threads < 1) {
+                fprintf(stderr, "Invalid number of threads specified, assuming default\n");
+                continue;
+            }
 
-            args->n_threads = atoi(argv[i + 1]);
+            args->n_threads = n_threads;
             break;
 
         case ARG_N_REQUESTS:
@@ -48,8 +56,27 @@ void arg_parse(int argc, char **argv, args_t *args) {
                 fprintf(stderr, "Number of requests unspecified, assuming default\n");
                 continue;
             }
+            int n_requests = atoi(argv[i + 1]);
+            if (n_requests < 1) {
+                fprintf(stderr, "Invalid number of threads specified, assuming default\n");
+                continue;
+            }
 
-            args->n_requests = atoi(argv[i + 1]);
+            args->n_requests = n_requests;
+            break;
+
+        case ARG_N_CONCURRENTS:
+            if ((i + 1) > argc) {
+                fprintf(stderr, "Number of concurrent connections unspecified, assuming default\n");
+                continue;
+            }
+            int n_concurrent = atoi(argv[i + 1]);
+            if (n_concurrent < 1) {
+                fprintf(stderr, "Invalid number of threads specified, assuming default\n");
+                continue;
+            }
+
+            args->n_concurrent = n_concurrent;
             break;
 
         case ARG_CUSTOM_REQUEST:

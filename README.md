@@ -1,5 +1,5 @@
 # Overview
-Simple little http benchmarker, no libraries just sockets and pthreads. Soon will switch over to asynchronous socket stuff in combination with threads. Also want to add feature where you can benchmark any arbitrary request.
+Simple little http benchmarker, no libraries just sockets, pthreads, and epoll. Think this could majorly benefit from an arena style memory allocator, keep accesses to latency info more friendly, lifetime issues go away.
 
 ## Build
 To build
