@@ -3,9 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int verbose_flag = 0;
+static int G_verbose_flag = 0;
+// need this because we're allocating that memory
+static int G_custom_request_flag = 0;
 
-int verbose() { return verbose_flag; }
+int verbose_flag() { return G_verbose_flag; }
+int custom_request_flag() { return G_custom_request_flag; }
 
 static arg_e arg_type(const char *argument) {
     if (strcmp(argument, "-j") == 0)
@@ -24,7 +27,7 @@ static arg_e arg_type(const char *argument) {
 };
 
 void arg_parse(int argc, char **argv, args_t *args) {
-    if (argc < 3)
+    if (argc == 1)
         return;
 
     for (int i = 1; i < argc; i++) {
@@ -32,47 +35,58 @@ void arg_parse(int argc, char **argv, args_t *args) {
         switch (arg_value) {
 
         case ARG_N_THREADS:
-            if ((i + 1) < argc) {
-                args->n_threads = atoi(argv[i + 1]);
-            } else {
+            if ((i + 1) > argc) {
                 fprintf(stderr, "Number of threads unspecified, assuming default\n");
+                continue;
             }
+
+            args->n_threads = atoi(argv[i + 1]);
             break;
 
         case ARG_N_REQUESTS:
-            if ((i + 1) < argc) {
-                args->n_requests = atoi(argv[i + 1]);
-            } else {
+            if ((i + 1) > argc) {
                 fprintf(stderr, "Number of requests unspecified, assuming default\n");
+                continue;
             }
+
+            args->n_requests = atoi(argv[i + 1]);
             break;
 
-        // TODO(spencer): set this up
         case ARG_CUSTOM_REQUEST:
+            if ((i + 1) > argc) {
+                fprintf(stderr, "HTTP request unspecified, assuming default\n");
+                continue;
+            }
 
+            // this allocates
+            args->request.content = strdup(argv[i + 1]);
+            G_custom_request_flag = 1;
             break;
 
         case ARG_CUSTOM_HOST:
-            if ((i + 1) < argc) {
-                char *ip_string = strtok(argv[i + 1], ":");
-                if (ip_string == NULL) {
-                    fprintf(stderr, "Invalid server address format: [ip:port], assuming default\n");
-                    continue;
-                }
-                memcpy(args->host.ip, ip_string, sizeof(char) * strlen(ip_string));
-
-                char *port_number_str = strtok(NULL, ":");
-                if (port_number_str == NULL) {
-                    fprintf(stderr, "Invalid server address format: [ip:port], assuming default\n");
-                    continue;
-                }
-                args->host.port = atoi(port_number_str);
+            if ((i + 1) > argc) {
+                fprintf(stderr, "Custom host unspecified, assuming default\n");
+                continue;
             }
+
+            char *ip_string = strtok(argv[i + 1], ":");
+            if (ip_string == NULL) {
+                fprintf(stderr, "Invalid server address format: [ip:port], assuming default\n");
+                continue;
+            }
+            memcpy(args->host.ip, ip_string, sizeof(char) * strlen(ip_string));
+
+            char *port_number_str = strtok(NULL, ":");
+            if (port_number_str == NULL) {
+                fprintf(stderr, "Invalid server address format: [ip:port], assuming default\n");
+                continue;
+            }
+            args->host.port = atoi(port_number_str);
 
             break;
 
         case ARG_VERBOSE:
-            verbose_flag = 1;
+            G_verbose_flag = 1;
             break;
 
         case ARG_COUNT:

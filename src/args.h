@@ -17,7 +17,7 @@ typedef struct {
 
 typedef struct {
     // this maybe should be dynamic
-    char content[512];
+    char *content;
     int length;
 } request_t;
 
@@ -30,6 +30,7 @@ typedef struct {
 
 void arg_parse(int argc, char **argv, args_t *args);
 
-int verbose();
+int verbose_flag();
+int custom_request_flag();
 
 #endif

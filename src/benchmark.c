@@ -70,7 +70,7 @@ static void *bench_worker(void *worker_args) {
             exit(EXT_ERROR_RECEIVE_FAIL);
         }
 
-        if (verbose()) {
+        if (verbose_flag()) {
             response[n_bytes_response] = '\0';
             printf("Response:\n%s", response);
         }
@@ -146,6 +146,11 @@ void bench_http_request(const args_t *args) {
             printf("Waiting for workers to finish...\n");
             sleep(3);
         }
+    }
+
+    // can free that memory now, if we needed it
+    if (custom_request_flag()) {
+        free(args->request.content);
     }
 
     // a little space here, huh
