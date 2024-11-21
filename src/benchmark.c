@@ -9,6 +9,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "args.h"
+
 typedef struct {
     int n_requests;
     host_t host;
@@ -68,15 +70,16 @@ static void *bench_worker(void *worker_args) {
             exit(EXT_ERROR_RECEIVE_FAIL);
         }
 
+        if (verbose()) {
+            response[n_bytes_response] = '\0';
+            printf("Response:\n%s", response);
+        }
+
         struct timespec end_request_time;
         clock_gettime(CLOCK_MONOTONIC, &end_request_time);
 
         args->request_latencies[i] = (end_request_time.tv_sec - start_request_time.tv_sec) +
                                      (end_request_time.tv_nsec - start_request_time.tv_nsec) / 1e9;
-
-        // terminating character, just in case we want to do something with this later
-        // don't want to forget
-        response[n_bytes_response] = '\0';
     }
 
     struct timespec end_batch_time;
@@ -90,8 +93,9 @@ static void *bench_worker(void *worker_args) {
 
 void bench_http_request(const args_t *args) {
     // no reason to spawn thread
-    if (args->n_threads == 0) {
+    if (args->n_threads < 2) {
         // this looks ugly sorry
+        printf("Beginning requests\n");
         bench_worker(&(worker_args_t){
             .n_requests = args->n_requests,
             .host = args->host,
@@ -120,7 +124,7 @@ void bench_http_request(const args_t *args) {
         };
         worker_args[i].request_latencies = calloc(n_reqs_per_worker, sizeof(double));
 
-        if (pthread_create(&workers[i], NULL, &bench_worker, &worker_args[i]) != 0) {
+        if (pthread_create(&workers[i], NULL, bench_worker, &worker_args[i]) != 0) {
             perror("Worker thread SPAWN failed");
             exit(EXT_ERROR_THREAD_SPAWN);
         }
@@ -133,6 +137,7 @@ void bench_http_request(const args_t *args) {
         // check if threads are done
         for (int i = 0; i < n_threads; i++) {
             if (pthread_tryjoin_np(workers[i], NULL) == 0) {
+                printf("A worker has finished\n");
                 n_threads_done++;
             }
         }
@@ -142,6 +147,9 @@ void bench_http_request(const args_t *args) {
             sleep(3);
         }
     }
+
+    // a little space here, huh
+    printf("\n\n\n");
 
     // print out our results
     for (int i = 0; i < n_threads; i++) {

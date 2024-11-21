@@ -3,6 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int verbose_flag = 0;
+
+int verbose() { return verbose_flag; }
+
 static arg_e arg_type(const char *argument) {
     if (strcmp(argument, "-j") == 0)
         return ARG_N_THREADS;
@@ -12,6 +16,8 @@ static arg_e arg_type(const char *argument) {
         return ARG_CUSTOM_REQUEST;
     else if (strcmp(argument, "-s") == 0)
         return ARG_CUSTOM_HOST;
+    else if (strcmp(argument, "-v") == 0)
+        return ARG_VERBOSE;
 
     else
         return -1;
@@ -29,7 +35,7 @@ void arg_parse(int argc, char **argv, args_t *args) {
             if ((i + 1) < argc) {
                 args->n_threads = atoi(argv[i + 1]);
             } else {
-                fprintf(stderr, "Number of threads unspecified");
+                fprintf(stderr, "Number of threads unspecified, assuming default\n");
             }
             break;
 
@@ -37,7 +43,7 @@ void arg_parse(int argc, char **argv, args_t *args) {
             if ((i + 1) < argc) {
                 args->n_requests = atoi(argv[i + 1]);
             } else {
-                fprintf(stderr, "Number of requests unspecified");
+                fprintf(stderr, "Number of requests unspecified, assuming default\n");
             }
             break;
 
@@ -46,9 +52,27 @@ void arg_parse(int argc, char **argv, args_t *args) {
 
             break;
 
-        // TODO(spencer): set this up
         case ARG_CUSTOM_HOST:
+            if ((i + 1) < argc) {
+                char *ip_string = strtok(argv[i + 1], ":");
+                if (ip_string == NULL) {
+                    fprintf(stderr, "Invalid server address format: [ip:port], assuming default\n");
+                    continue;
+                }
+                memcpy(args->host.ip, ip_string, sizeof(char) * strlen(ip_string));
 
+                char *port_number_str = strtok(NULL, ":");
+                if (port_number_str == NULL) {
+                    fprintf(stderr, "Invalid server address format: [ip:port], assuming default\n");
+                    continue;
+                }
+                args->host.port = atoi(port_number_str);
+            }
+
+            break;
+
+        case ARG_VERBOSE:
+            verbose_flag = 1;
             break;
 
         case ARG_COUNT:

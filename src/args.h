@@ -6,6 +6,7 @@ typedef enum {
     ARG_N_REQUESTS,
     ARG_CUSTOM_REQUEST,
     ARG_CUSTOM_HOST,
+    ARG_VERBOSE,
     ARG_COUNT,
 } arg_e;
 
@@ -28,5 +29,7 @@ typedef struct {
 } args_t;
 
 void arg_parse(int argc, char **argv, args_t *args);
+
+int verbose();
 
 #endif
