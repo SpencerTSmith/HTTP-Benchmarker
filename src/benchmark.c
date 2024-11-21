@@ -91,27 +91,42 @@ void bench_http_request(const args_t *args) {
 
     // a little space here, huh
     printf("\n\n\n");
+    printf("Total Work Time (includes socket creation, etc.) : %.9f\n", work_time);
+
+    int n_reqs_per_socket = n_reqs_per_worker / args->n_concurrent;
 
     // print out our results
-    for (int i = 0; i < n_threads; i++) {
-        printf("Total Work Time (includes socket creation, etc.) : %.9f", work_time);
-        printf("Worker %d stats ----\n", i);
+    for (int t = 0; t < n_threads; t++) {
+        printf("Worker %d stats ----\n", t);
 
-        double avg_latency = 0.0;
-        for (int j = 0; j < n_reqs_per_worker; j++) {
-            avg_latency += worker_args[i].request_timings[j].latency;
+        double avg_latency_thread = 0.0;
+        for (int s = 0; s < args->n_concurrent; s++) {
+            printf("	Socket %d stats ----", s);
+
+            double avg_latency_socket = 0.0f;
+            for (int i = 0; i < n_reqs_per_socket; i++) {
+                avg_latency_socket += worker_args[t].socket_datas[s].latencies[i];
+            }
+            avg_latency_socket /= n_reqs_per_socket;
+
+            printf(" Average request latency : %0.15f seconds\n", avg_latency_socket);
+
+            avg_latency_thread += avg_latency_socket;
+
+            // we can free that sockets timing data now
+            free(worker_args[t].socket_datas[s].latencies);
         }
-        avg_latency /= n_reqs_per_worker;
+        avg_latency_thread /= n_reqs_per_worker;
 
-        double throughput = n_reqs_per_worker / worker_args[i].batch_time;
+        double throughput_thread = n_reqs_per_worker / worker_args[t].batch_time;
 
         printf("	Request batch time : %d requests in %0.9f seconds\n", n_reqs_per_worker,
-               worker_args[i].batch_time);
-        printf("	Average request latency : %0.9f seconds\n", avg_latency);
-        printf("	Request throughput : %0.9f requests/second\n", throughput);
+               worker_args[t].batch_time);
+        printf("	Average request latency : %0.9f seconds\n", avg_latency_thread);
+        printf("	Request throughput : %0.9f requests/second\n", throughput_thread);
 
-        // done with stats now
-        free(worker_args[i].request_timings);
+        // we can free that this threads socket data now
+        free(worker_args[t].socket_datas);
     }
 }
 
@@ -138,13 +153,13 @@ static void *bench_worker(void *worker_args) {
         args->socket_datas[i].n_requests = n_reqs_per_socket;
 
         // runtime dependent num of requsts per socket
-        args->socket_datas[i].timings = calloc(n_reqs_per_socket, sizeof(request_timing_t));
-        if (args->socket_datas[i].timings == NULL) {
+        args->socket_datas[i].latencies = calloc(n_reqs_per_socket, sizeof(double));
+        if (args->socket_datas[i].latencies == NULL) {
             fprintf(stderr, "Timing data memory allocation failed");
             exit(EXT_ERROR_TIMING_DATA_ALLOCATE);
         }
 
-        // and an event for every socket
+        // and an event to track every socket
         struct epoll_event event = {0};
         event.events = EPOLLIN | EPOLLOUT | EPOLLERR;
         event.data.fd = args->socket_datas[i].fd;
@@ -156,7 +171,7 @@ static void *bench_worker(void *worker_args) {
 
         // initial to get the event loop started
         send_http_request(args->request, &args->socket_datas[i]);
-        args->socket_datas->current_request++;
+        args->socket_datas[i].current_request++;
         n_sockets_connected++;
     }
 
@@ -176,52 +191,67 @@ static void *bench_worker(void *worker_args) {
             int event_socket_fd = events[e].data.fd;
 
             if (events[e].events & EPOLLERR) {
+
                 perror("Epoll socket event failed, closing that socket");
+                epoll_ctl(epoll_fd, EPOLL_CTL_DEL, event_socket_fd, NULL);
                 close(event_socket_fd);
                 n_sockets_connected--;
 
-                // we are recieving a response
+                // we have received a response
             } else if (events[e].events & EPOLLIN) {
+
+                printf("here");
                 // find the socket we got an event for...
                 // TODO(spencer): this might benefit from hashing
                 for (int i = 0; i < args->n_concurrent; i++) {
+
                     if (args->socket_datas[i].fd == event_socket_fd) {
                         // this will also calc the timing
                         recv_http_response(&args->socket_datas[i]);
 
-                        // if we can send a request
-                        if (args->socket_datas[i].current_request <
+                        // have received all messages... close
+                        if (args->socket_datas[i].current_request >=
                             args->socket_datas[i].n_requests) {
-                            // this will also calc the timing
-                            send_http_request(args->request, &args->socket_datas[i]);
-
-                            // I think I like this decrement here (not in the send_http func) so
-                            // it's more obvious what its doing
-                            args->socket_datas[i].current_request++;
-                        } else {
+                            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, event_socket_fd, NULL);
                             close(event_socket_fd);
                             n_sockets_connected--;
+                            break;
                         }
+
+                        // this will also calc the timing
+                        send_http_request(args->request, &args->socket_datas[i]);
+
+                        // I think I like this decrement here (not in the send_http func) so
+                        // it's more obvious what its doing
+                        args->socket_datas[i].current_request++;
 
                         // don't have to go through the rest of the socket_fds
                         break;
                     }
                 }
+
                 // we have the ability to send a message
             } else if (events[e].events & EPOLLOUT) {
+
+                // find the socket we got an event for...
+                // TODO(spencer): this might benefit from hashing
                 for (int i = 0; i < args->n_concurrent; i++) {
 
-                    // we have this events socket and we still have more requests to send
-                    if (args->socket_datas[i].fd == event_socket_fd &&
-                        args->socket_datas[i].current_request < args->socket_datas[i].n_requests) {
+                    // we have this event's socket
+                    if (args->socket_datas[i].fd == event_socket_fd) {
+
+                        // done sending messages
+                        if (args->socket_datas[i].current_request >=
+                            args->socket_datas[i].n_requests) {
+                            break;
+                        }
+
                         // this will also calc the timing
                         send_http_request(args->request, &args->socket_datas[i]);
 
-                        // I think I like this decrement here (not in the send_http func) so it's
-                        // more obvious what its doing
+                        // I think I like this decrement here (not in the send_http func) so
+                        // it's more obvious what its doing
                         args->socket_datas[i].current_request++;
-
-                        // don't have to go through the rest of the socket_fds
                         break;
                     }
                 }
