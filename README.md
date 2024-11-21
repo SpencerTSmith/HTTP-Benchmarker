@@ -1,5 +1,5 @@
 # Overview
-Simple little http benchmarker, no libraries just sockets, pthreads, and epoll. Think this could majorly benefit from an arena style memory allocator, keep accesses to latency info more friendly, lifetime issues go away.
+Simple little http benchmarker, no libraries just sockets, pthreads, and epoll. Think this could majorly benefit from an arena style memory allocator, keep accesses to latency info more friendly, possible lifetime issues go away (valgrind checks out ok for now, but it would be simpler with shared lifetimes).
 
 ## Build
 To build
@@ -22,9 +22,11 @@ Set up by default for .env.example port on local machine, 1000 requests divided 
 args available
 - -n {number of requests to send}
 - -j {number of threads to spawn} will distribute requests evenly between them
-- -r {custom http request} coming soon
+- -c {number of concurrent sockets per thread} will distribute further the requests
+- -r {custom http request} a string "" of your http request
 - -s {server to benchmark of the form [ip:port]}
-- -v verbose (prints(truncated) http response to console) no argument modifier
+- -v verbose (prints (truncated) http response to console) no argument modifier
+- -f {filepath} output is redirected to filepath... coming soon
 
 ## Output
 
