@@ -29,12 +29,19 @@ void bench_http_request(const args_t *args) {
     // just since we access it so much
     int n_threads = args->n_threads;
 
-    // vla, not a fan but i don't like the way malloc looks for threads
-    pthread_t workers[n_threads];
+    pthread_t *workers = calloc(n_threads, sizeof(pthread_t));
+    if (workers == NULL) {
+        fprintf(stderr, "Thread id memory allocation failed");
+        exit(EXT_ERROR_THREAD_ID_ALLOCATE);
+    }
+
+    worker_args_t *worker_args = calloc(n_threads, sizeof(worker_args_t));
+    if (workers == NULL) {
+        fprintf(stderr, "Thread args memory allocation failed");
+        exit(EXT_ERROR_THREAD_ARGS_ALLOCATE);
+    }
+
     int n_reqs_per_worker = args->n_requests / n_threads;
-
-    worker_args_t worker_args[n_threads];
-
     for (int i = 0; i < n_threads; i++) {
         worker_args[i] = (worker_args_t){
             .n_requests = n_reqs_per_worker,
@@ -84,18 +91,20 @@ void bench_http_request(const args_t *args) {
     double work_time = (end_work_time.tv_sec - start_work_time.tv_sec) +
                        (end_work_time.tv_nsec - start_work_time.tv_nsec) / 1e9;
 
-    // can free that memory now, if we needed it
+    // can free that memory for requests now, if we needed it
     if (custom_request_flag()) {
         free(args->request.content);
     }
 
     // a little space here, huh
-    printf("\n\n\n");
+    printf("\n\n");
     printf("Total Work Time (includes socket creation, etc.) : %.9f\n", work_time);
 
     int n_reqs_per_socket = n_reqs_per_worker / args->n_concurrent;
 
     // print out our results
+    double avg_throughput_threads = 0.0;
+    double avg_latency_threads = 0.0;
     for (int t = 0; t < n_threads; t++) {
         printf("Worker %d stats ----\n", t);
 
@@ -103,9 +112,14 @@ void bench_http_request(const args_t *args) {
         for (int s = 0; s < args->n_concurrent; s++) {
             printf("	Socket %d stats --\n", s);
 
-            double avg_latency_socket = 0.0f;
+            double avg_latency_socket = 0.0;
             for (int i = 0; i < n_reqs_per_socket; i++) {
-                avg_latency_socket += worker_args[t].socket_datas[s].timings[i].latency;
+                // calculate the latency of this request
+                request_timing_t *timing = &worker_args[t].socket_datas[s].timings[i];
+
+                double latency = (timing->recv_time.tv_sec - timing->send_time.tv_sec) +
+                                 (timing->recv_time.tv_nsec - timing->send_time.tv_nsec) / 1e9;
+                avg_latency_socket += latency;
             }
             avg_latency_socket /= n_reqs_per_socket;
 
@@ -122,13 +136,30 @@ void bench_http_request(const args_t *args) {
 
         printf("\n	Request batch time : %d requests in %0.9f seconds\n", n_reqs_per_worker,
                worker_args[t].batch_time);
-        printf("	Average request latency : %0.9f seconds\n", avg_latency_thread);
-        printf("	Request throughput : %0.9f requests/second\n", throughput_thread);
+        printf("	Average thread request latency : %0.9f seconds\n", avg_latency_thread);
+        printf("	Thread request throughput : %0.9f requests/second\n", throughput_thread);
+
+        avg_throughput_threads += throughput_thread;
+        avg_latency_threads += avg_latency_thread;
 
         // we can free that this threads socket data now
         free(worker_args[t].socket_datas);
     }
+    avg_throughput_threads /= n_threads;
+    avg_latency_threads /= n_threads;
+
+    printf("\n\n");
+    printf("Overall stats ----\n");
+    printf("	Average thread throughput : %0.9f\n", avg_throughput_threads);
+    printf("	Average thread latency : %0.9f\n", avg_latency_threads);
+
+    free(workers);
+    free(worker_args);
 }
+
+static void handle_send(int epoll_fd, socket_data_t *socket_data, request_t request);
+// return 1 if this socket is done, else 0
+static int handle_recv(int epoll_fd, socket_data_t *socket_data);
 
 static void *bench_worker(void *worker_args) {
     worker_args_t *args = (worker_args_t *)worker_args;
@@ -147,32 +178,31 @@ static void *bench_worker(void *worker_args) {
 
     // Set up our sockets
     for (int i = 0; i < args->n_concurrent; i++) {
-        args->socket_datas[i].fd = get_connected_socket(args->host);
+        socket_data_t *socket_data = &args->socket_datas[i];
 
-        args->socket_datas[i].current_request = 0;
-        args->socket_datas[i].current_response = 0;
-        args->socket_datas[i].n_requests = n_reqs_per_socket;
+        socket_data->fd = get_connected_socket(args->host);
+
+        socket_data->current_request = 0;
+        socket_data->current_response = 0;
+        socket_data->n_requests = n_reqs_per_socket;
 
         // runtime dependent num of requsts per socket
-        args->socket_datas[i].timings = calloc(n_reqs_per_socket, sizeof(request_timing_t));
-        if (args->socket_datas[i].timings == NULL) {
+        socket_data->timings = calloc(n_reqs_per_socket, sizeof(request_timing_t));
+        if (socket_data->timings == NULL) {
             fprintf(stderr, "Timing data memory allocation failed");
             exit(EXT_ERROR_TIMING_DATA_ALLOCATE);
         }
 
-        // and an event to track every socket
+        // and events to track
         struct epoll_event event = {0};
         event.events = EPOLLIN | EPOLLOUT | EPOLLERR;
-        event.data.fd = args->socket_datas[i].fd;
+        event.data.fd = socket_data->fd;
 
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, args->socket_datas[i].fd, &event) < 0) {
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_data->fd, &event) < 0) {
             perror("Epoll event for socket failed to be added");
             exit(EXT_ERROR_EPOLL_ADD_EVENT);
         }
 
-        // initial to get the event loop started
-        send_http_request(args->request, &args->socket_datas[i]);
-        args->socket_datas[i].current_request++;
         n_sockets_connected++;
     }
 
@@ -188,66 +218,39 @@ static void *bench_worker(void *worker_args) {
             exit(EXT_ERROR_EPOLL_WAIT);
         }
 
+        // handle all events
         for (int e = 0; e < n_events; e++) {
             int event_socket_fd = events[e].data.fd;
 
-            if (events[e].events & EPOLLERR) {
-
+            switch (events[e].events) {
+            case (EPOLLERR):
                 perror("Epoll socket event failed, closing that socket");
-                epoll_ctl(epoll_fd, EPOLL_CTL_DEL, event_socket_fd, NULL);
+                if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, event_socket_fd, NULL))
+                    perror("Removing socket from epoll failed");
+
                 close(event_socket_fd);
                 n_sockets_connected--;
-
-                // we have received a response
-            } else if (events[e].events & EPOLLIN) {
-
-                // find the socket we got an event for...
-                // TODO(spencer): this might benefit from hashing at larger # of sockets
+                break;
+            case (EPOLLIN):
                 for (int i = 0; i < args->n_concurrent; i++) {
-
                     if (args->socket_datas[i].fd == event_socket_fd) {
-                        // this will also calc the timing
-                        recv_http_response(&args->socket_datas[i]);
-                        args->socket_datas[i].current_response++;
-
-                        // have received all messages... close
-                        if (args->socket_datas[i].current_response >=
-                            args->socket_datas[i].n_requests) {
-                            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, event_socket_fd, NULL);
-                            close(event_socket_fd);
+                        if (handle_recv(epoll_fd, &args->socket_datas[i]) == 1) {
                             n_sockets_connected--;
-                            break;
                         }
-
-                        break;
                     }
                 }
-
-                // we have the ability to send a message
-            } else if (events[e].events & EPOLLOUT) {
-
-                // find the socket we got an event for...
-                // TODO(spencer): this might benefit from hashing
+                break;
+            case (EPOLLOUT):
                 for (int i = 0; i < args->n_concurrent; i++) {
-
-                    // we have this event's socket
                     if (args->socket_datas[i].fd == event_socket_fd) {
-
-                        // done sending messages
-                        if (args->socket_datas[i].current_request >=
-                            args->socket_datas[i].n_requests) {
-                            break;
-                        }
-
-                        // this will also calc the timing
-                        send_http_request(args->request, &args->socket_datas[i]);
-
-                        // I think I like this decrement here (not in the send_http func) so
-                        // it's more obvious what its doing
-                        args->socket_datas[i].current_request++;
+                        handle_send(epoll_fd, &args->socket_datas[i], args->request);
                         break;
                     }
                 }
+                break;
+            default:
+                // fprintf(stderr, "Unkown Epoll event\n");
+                break;
             }
         }
     }
@@ -257,6 +260,50 @@ static void *bench_worker(void *worker_args) {
     args->batch_time = (end_batch_time.tv_sec - start_batch_time.tv_sec) +
                        (end_batch_time.tv_nsec - start_batch_time.tv_nsec) / 1e9;
 
-    // close(socket_fd);
+    // shouldn't need to close any sockets... should close in event loop
+    close(epoll_fd);
     return NULL;
+}
+
+void handle_send(int epoll_fd, socket_data_t *socket_data, request_t request) {
+    // done sending messages
+    if (socket_data->current_request >= socket_data->n_requests) {
+        // turn off tracking EPOLLOUT events for this socket
+        struct epoll_event event = {0};
+        event.events = EPOLLIN | EPOLLERR;
+        event.data.fd = socket_data->fd;
+
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, socket_data->fd, &event))
+            perror("Removing EPOLLOUT event failed");
+        return;
+    }
+
+    send_http_request(socket_data->fd, request);
+
+    // record the start time of this request
+    struct timespec *send_time = &socket_data->timings[socket_data->current_request].send_time;
+    clock_gettime(CLOCK_MONOTONIC, send_time);
+    socket_data->current_request++;
+}
+
+int handle_recv(int epoll_fd, socket_data_t *socket_data) {
+    // have received all messages... close, could maybe move this to
+    // a loop at the end to avoid syscall overhead for other sockets still
+    // sending, but i lazy
+    if (socket_data->current_response >= socket_data->n_requests) {
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, socket_data->fd, NULL))
+            perror("Removing socket from epoll failed");
+
+        close(socket_data->fd);
+        return 1;
+    }
+
+    recv_http_response(socket_data->fd);
+
+    // record the time, assuming we get all the responses in the order
+    // we sent... sort of big assumption... oops
+    struct timespec *end_time = &socket_data->timings[socket_data->current_response].recv_time;
+    clock_gettime(CLOCK_MONOTONIC, end_time);
+    socket_data->current_response++;
+    return 0;
 }

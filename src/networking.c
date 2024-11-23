@@ -8,45 +8,32 @@
 #include "benchmark.h"
 #include "networking.h"
 
-void send_http_request(request_t request, socket_data_t *socket_data) {
-    if (send(socket_data->fd, request.content, request.length, 0) < 0) {
+void send_http_request(int socket_fd, request_t request) {
+    if (send(socket_fd, request.content, request.length, 0) < 0) {
         perror("Request send failed");
-        close(socket_data->fd);
+        close(socket_fd);
         exit(EXT_ERROR_REQUEST_FAIL);
     }
 
     if (verbose_flag()) {
-        printf("Sent request %d on socket %d\n", socket_data->current_request, socket_data->fd);
+        printf("Sent request on socket %d\n", socket_fd);
     }
-
-    // hmm should this be before we send the request... or after?
-    clock_gettime(CLOCK_MONOTONIC, &socket_data->timings[socket_data->current_request].start_time);
 }
 
-void recv_http_response(socket_data_t *socket_data) {
+void recv_http_response(int socket_fd) {
     // really don't want to be malloc'ing on every request response so we'll just have to truncate
     char response[4096] = {0};
-    int n_bytes_response = recv(socket_data->fd, response, sizeof(response) - 1, 0);
+    int n_bytes_response = recv(socket_fd, response, sizeof(response) - 1, 0);
     if (n_bytes_response < 0) {
         perror("Receive response failed");
-        close(socket_data->fd);
+        close(socket_fd);
         exit(EXT_ERROR_RECEIVE_FAIL);
     }
 
-    struct timespec end_time;
-    clock_gettime(CLOCK_MONOTONIC, &end_time);
-
-    double latency =
-        (end_time.tv_sec - socket_data->timings[socket_data->current_response].start_time.tv_sec) +
-        (end_time.tv_nsec -
-         socket_data->timings[socket_data->current_response].start_time.tv_nsec) /
-            1e9;
-
-    socket_data->timings[socket_data->current_response].latency = latency;
-
     if (verbose_flag()) {
         response[n_bytes_response] = '\0';
-        printf("\nResponse:\n%s", response);
+        printf("\nReceived response on socket %d\n", socket_fd);
+        printf("Response:\n%s", response);
     }
 }
 

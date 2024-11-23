@@ -17,8 +17,8 @@ typedef struct {
 // most likely this is not keeping exact track of different requests and the correctly
 // corresponding response, only in the order it is received
 typedef struct {
-    struct timespec start_time;
-    double latency;
+    struct timespec send_time;
+    struct timespec recv_time;
 } request_timing_t;
 
 // group latency timings up with sockets
@@ -33,7 +33,7 @@ typedef struct {
 // these are async/non-blocking... whatever you wanna call it
 // assumes 0 initialized
 int get_connected_socket(host_t host);
-void send_http_request(request_t request, socket_data_t *socket_data);
-void recv_http_response(socket_data_t *timing);
+void send_http_request(int socket_fd, request_t request);
+void recv_http_response(int socket_fd);
 
 #endif
