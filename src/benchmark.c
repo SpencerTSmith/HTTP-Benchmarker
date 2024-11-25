@@ -24,6 +24,10 @@ typedef struct worker_args_t {
     socket_data_t *socket_datas;
 } worker_args_t;
 
+// this frees stats held in worker args
+static void calc_print_stats(const args_t *args, const worker_args_t *worker_datas, int n_workers,
+                             double work_time);
+
 // kind of large struct so we'll pass by pointer
 void bench_http_request(const args_t *args) {
     // just since we access it so much
@@ -41,6 +45,7 @@ void bench_http_request(const args_t *args) {
         exit(EXT_ERROR_THREAD_ARGS_ALLOCATE);
     }
 
+    // start up workers
     int n_reqs_per_worker = args->n_requests / n_threads;
     for (int i = 0; i < n_threads; i++) {
         worker_args[i] = (worker_args_t){
@@ -68,6 +73,7 @@ void bench_http_request(const args_t *args) {
     struct timespec start_work_time;
     clock_gettime(CLOCK_MONOTONIC, &start_work_time);
 
+    // wait for workers to finish
     int n_threads_done = 0;
     while (n_threads_done < n_threads) {
         n_threads_done = 0;
@@ -88,71 +94,16 @@ void bench_http_request(const args_t *args) {
 
     struct timespec end_work_time;
     clock_gettime(CLOCK_MONOTONIC, &end_work_time);
+
     double work_time = (end_work_time.tv_sec - start_work_time.tv_sec) +
                        (end_work_time.tv_nsec - start_work_time.tv_nsec) / 1e9;
+
+    calc_print_stats(args, worker_args, n_threads, work_time);
 
     // can free that memory for requests now, if we needed it
     if (custom_request_flag()) {
         free(args->request.content);
     }
-
-    // a little space here, huh
-    printf("\n\n");
-    printf("Total Work Time (includes socket creation, etc.) : %.9f\n", work_time);
-
-    int n_reqs_per_socket = n_reqs_per_worker / args->n_concurrent;
-
-    // print out our results
-    double avg_throughput_threads = 0.0;
-    double avg_latency_threads = 0.0;
-    for (int t = 0; t < n_threads; t++) {
-        printf("Worker %d stats ----\n", t);
-
-        double avg_latency_thread = 0.0;
-        for (int s = 0; s < args->n_concurrent; s++) {
-            printf("	Socket %d stats --\n", s);
-
-            double avg_latency_socket = 0.0;
-            for (int i = 0; i < n_reqs_per_socket; i++) {
-                // calculate the latency of this request
-                request_timing_t *timing = &worker_args[t].socket_datas[s].timings[i];
-
-                double latency = (timing->recv_time.tv_sec - timing->send_time.tv_sec) +
-                                 (timing->recv_time.tv_nsec - timing->send_time.tv_nsec) / 1e9;
-                avg_latency_socket += latency;
-            }
-            avg_latency_socket /= n_reqs_per_socket;
-
-            printf("	  Average request latency : %0.15f seconds\n", avg_latency_socket);
-
-            avg_latency_thread += avg_latency_socket;
-
-            // we can free that sockets timing data now
-            free(worker_args[t].socket_datas[s].timings);
-        }
-        avg_latency_thread /= args->n_concurrent;
-
-        double throughput_thread = n_reqs_per_worker / worker_args[t].batch_time;
-
-        printf("\n	Request batch time : %d requests in %0.9f seconds\n", n_reqs_per_worker,
-               worker_args[t].batch_time);
-        printf("	Average thread request latency : %0.9f seconds\n", avg_latency_thread);
-        printf("	Thread request throughput : %0.9f requests/second\n", throughput_thread);
-
-        avg_throughput_threads += throughput_thread;
-        avg_latency_threads += avg_latency_thread;
-
-        // we can free that this threads socket data now
-        free(worker_args[t].socket_datas);
-    }
-    avg_throughput_threads /= n_threads;
-    avg_latency_threads /= n_threads;
-
-    printf("\n\n");
-    printf("Overall stats ----\n");
-    printf("	Average thread throughput : %0.9f\n", avg_throughput_threads);
-    printf("	Average thread latency : %0.9f\n", avg_latency_threads);
-
     free(workers);
     free(worker_args);
 }
@@ -249,7 +200,7 @@ static void *bench_worker(void *worker_args) {
                 }
                 break;
             default:
-                // fprintf(stderr, "Unkown Epoll event\n");
+                fprintf(stderr, "Unkown Epoll event\n");
                 break;
             }
         }
@@ -263,6 +214,68 @@ static void *bench_worker(void *worker_args) {
     // shouldn't need to close any sockets... should close in event loop
     close(epoll_fd);
     return NULL;
+}
+
+void calc_print_stats(const args_t *args, const worker_args_t *worker_datas, int n_workers,
+                      double work_time) {
+    // a little space here, huh
+    printf("\n\n");
+    printf("Total Work Time (includes socket creation, etc.) : %.9f\n", work_time);
+
+    int n_reqs_per_worker = args->n_requests / n_workers;
+    int n_reqs_per_socket = n_reqs_per_worker / args->n_concurrent;
+
+    // print out our results
+    double avg_throughput_threads = 0.0;
+    double avg_latency_threads = 0.0;
+
+    for (int t = 0; t < n_workers; t++) {
+        printf("Worker %d stats ----\n", t);
+
+        double avg_latency_thread = 0.0;
+        for (int s = 0; s < args->n_concurrent; s++) {
+            printf("	Socket %d stats --\n", s);
+
+            double avg_latency_socket = 0.0;
+            for (int i = 0; i < n_reqs_per_socket; i++) {
+                // calculate the latency of this request
+                request_timing_t *timing = &worker_datas[t].socket_datas[s].timings[i];
+
+                double latency = (timing->recv_time.tv_sec - timing->send_time.tv_sec) +
+                                 (timing->recv_time.tv_nsec - timing->send_time.tv_nsec) / 1e9;
+                avg_latency_socket += latency;
+                avg_latency_thread += latency;
+            }
+            avg_latency_socket /= n_reqs_per_socket;
+
+            printf("	  Average request latency : %0.15f seconds\n", avg_latency_socket);
+
+            // we can free this socket's timing data now
+            free(worker_datas[t].socket_datas[s].timings);
+        }
+        avg_latency_thread /= n_reqs_per_worker;
+
+        double throughput_thread = n_reqs_per_worker / worker_datas[t].batch_time;
+
+        printf("\n	Worker batch time : %d requests in %0.9f seconds\n", n_reqs_per_worker,
+               worker_datas[t].batch_time);
+        printf("	Worker average request latency : %0.9f seconds\n", avg_latency_thread);
+        printf("	Worker request throughput : %0.9f requests/second\n", throughput_thread);
+
+        avg_throughput_threads += throughput_thread;
+        avg_latency_threads += avg_latency_thread;
+
+        // we can free this threads socket datas now
+        free(worker_datas[t].socket_datas);
+    }
+
+    avg_throughput_threads /= n_workers;
+    avg_latency_threads /= n_workers;
+
+    printf("\n\n");
+    printf("Overall stats ----\n");
+    printf("	Average thread throughput : %0.9f\n", avg_throughput_threads);
+    printf("	Average thread latency : %0.9f\n", avg_latency_threads);
 }
 
 void handle_send(int epoll_fd, socket_data_t *socket_data, request_t request) {
@@ -298,7 +311,8 @@ int handle_recv(int epoll_fd, socket_data_t *socket_data) {
         return 1;
     }
 
-    recv_http_response(socket_data->fd);
+    char response_buffer[4096] = {0};
+    recv_http_response(socket_data->fd, response_buffer, 4096);
 
     // record the time, assuming we get all the responses in the order
     // we sent... sort of big assumption... oops

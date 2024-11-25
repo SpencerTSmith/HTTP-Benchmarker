@@ -13,10 +13,11 @@ typedef struct {
     int length;
 } request_t;
 
-// TODO(spencer): this is not a satisfactory solution....
-// most likely this is not keeping exact track of different requests and the correctly
+// TODO(spencer): this is not a satisfactory solution...
+// this is not keeping exact track of different requests and the correctly
 // corresponding response, only in the order it is received
 typedef struct {
+    int id;
     struct timespec send_time;
     struct timespec recv_time;
 } request_timing_t;
@@ -34,6 +35,8 @@ typedef struct {
 // assumes 0 initialized
 int get_connected_socket(host_t host);
 void send_http_request(int socket_fd, request_t request);
-void recv_http_response(int socket_fd);
+// for now just truncate the response, presumably if we are benchmarking we don't need to receive
+// the full response
+void recv_http_response(int socket_fd, char *buffer, int buffer_size);
 
 #endif

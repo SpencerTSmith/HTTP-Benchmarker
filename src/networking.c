@@ -20,10 +20,9 @@ void send_http_request(int socket_fd, request_t request) {
     }
 }
 
-void recv_http_response(int socket_fd) {
+void recv_http_response(int socket_fd, char *buffer, size_t buffer_size) {
     // really don't want to be malloc'ing on every request response so we'll just have to truncate
-    char response[4096] = {0};
-    int n_bytes_response = recv(socket_fd, response, sizeof(response) - 1, 0);
+    int n_bytes_response = recv(socket_fd, buffer, buffer_size - 1, 0);
     if (n_bytes_response < 0) {
         perror("Receive response failed");
         close(socket_fd);
@@ -31,9 +30,9 @@ void recv_http_response(int socket_fd) {
     }
 
     if (verbose_flag()) {
-        response[n_bytes_response] = '\0';
+        buffer[n_bytes_response] = '\0';
         printf("\nReceived response on socket %d\n", socket_fd);
-        printf("Response:\n%s", response);
+        printf("Response:\n%s", buffer);
     }
 }
 

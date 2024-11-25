@@ -87,6 +87,8 @@ void arg_parse(int argc, char **argv, args_t *args) {
 
             // this allocates
             args->request.content = strdup(argv[i + 1]);
+            args->request.length = strlen(args->request.content);
+            printf("Custom request set as: %s\n", args->request.content);
             G_custom_request_flag = 1;
             break;
 

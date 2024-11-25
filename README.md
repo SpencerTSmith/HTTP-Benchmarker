@@ -23,7 +23,7 @@ args available
 - -n {number of requests to send}
 - -j {number of threads to spawn} will distribute requests evenly between them
 - -c {number of concurrent sockets per thread} will distribute further the requests
-- -r {custom http request} a string "" of your http request
+- -r {custom http request} a string $'' (important, use this special shell string format for any escape characters like \n, \r, etc) of your http request
 - -s {server to benchmark of the form [ip:port]}
 - -v verbose (prints (truncated) http response to console) no argument modifier
 - -f {filepath} output is redirected to filepath... coming soon
