@@ -2,6 +2,7 @@
 
 #include "benchmark.h"
 
+#include <liburing.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,8 +77,8 @@ void bench_http_request(const args_t *args) {
     // wait for workers to finish
     int n_threads_done = 0;
     while (n_threads_done < n_threads) {
+        // reset, don't count done ones twice
         n_threads_done = 0;
-
         // check if threads are done
         for (int i = 0; i < n_threads; i++) {
             if (pthread_tryjoin_np(workers[i], NULL) == 0) {
@@ -87,7 +88,7 @@ void bench_http_request(const args_t *args) {
         }
 
         if (n_threads_done < n_threads) {
-            printf("Waiting for workers to finish...\n");
+            printf("Waiting %d for workers to finish...\n", n_threads - n_threads_done);
             sleep(3);
         }
     }
@@ -200,7 +201,7 @@ static void *bench_worker(void *worker_args) {
                 }
                 break;
             default:
-                fprintf(stderr, "Unkown Epoll event\n");
+                fprintf(stderr, "Unkown Epoll event: %d\n", events[e].events & EPOLLERR);
                 break;
             }
         }
@@ -314,10 +315,42 @@ int handle_recv(int epoll_fd, socket_data_t *socket_data) {
     char response_buffer[4096] = {0};
     recv_http_response(socket_data->fd, response_buffer, 4096);
 
-    // record the time, assuming we get all the responses in the order
-    // we sent... sort of big assumption... oops
+    // record the time, again, assuming that the http server is pipelining correctly, we recieve in
+    // the order we sent
     struct timespec *end_time = &socket_data->timings[socket_data->current_response].recv_time;
     clock_gettime(CLOCK_MONOTONIC, end_time);
     socket_data->current_response++;
     return 0;
 }
+
+void *bench_worker_uring(void *worker_args) {
+    worker_args_t *args = (worker_args_t *)worker_args;
+
+    struct io_uring ring = {0};
+
+    int n_sockets_connected = 0;
+    int n_reqs_per_socket = args->n_requests / args->n_concurrent;
+    for (int i = 0; i < args->n_concurrent; i++) {
+        socket_data_t *socket_data = &args->socket_datas[i];
+
+        socket_data->fd = get_connected_socket(args->host);
+
+        socket_data->current_request = 0;
+        socket_data->current_response = 0;
+        socket_data->n_requests = n_reqs_per_socket;
+
+        // runtime dependent num of requsts per socket
+        socket_data->timings = calloc(n_reqs_per_socket, sizeof(request_timing_t));
+        if (socket_data->timings == NULL) {
+            fprintf(stderr, "Timing data memory allocation failed");
+            exit(EXT_ERROR_TIMING_DATA_ALLOCATE);
+        }
+
+        struct io_uring_sqe *entry = io_uring_get_sqe(&ring);
+        io_uring_prep_send(entry, socket_data->fd, args->request.content, args->request.length, 0);
+
+        n_sockets_connected++;
+    }
+
+    return NULL;
+};
