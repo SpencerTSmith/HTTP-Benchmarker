@@ -1,5 +1,5 @@
 # Overview
-Simple little http benchmarker, no libraries just sockets, pthreads, and epoll. Think this could majorly benefit from an arena style memory allocator, keep accesses to latency info more friendly, possible lifetime issues go away (valgrind checks out ok for now, but it would be simpler with shared lifetimes).
+Simple little http benchmarker, no libraries just sockets, pthreads, and epoll.
 
 ## Build
 To build
@@ -26,7 +26,6 @@ args available
 - -r {custom http request} a string $'' (important, use this special shell string format for any escape characters like \n, \r, etc) of your http request
 - -s {server to benchmark of the form [ip:port]}
 - -v verbose (prints (truncated) http response to console) no argument modifier
-- -f {filepath} output is redirected to filepath... coming soon
 
 ## Output
 
@@ -35,3 +34,7 @@ Will return some stats, such as:
 - Total time for batch per worker
 - Avg latency per request per worker
 - Throughput per worker
+
+## Future
+- Think this could majorly benefit from an arena style memory allocator, keep accesses to latency info more friendly, possible lifetime issues go away (valgrind checks out ok for now, but it would be simpler with shared lifetimes).
+- io_uring instead of epoll
