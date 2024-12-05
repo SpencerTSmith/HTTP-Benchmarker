@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,8 @@ static int G_custom_request_flag = 0;
 
 int verbose_flag() { return G_verbose_flag; }
 int custom_request_flag() { return G_custom_request_flag; }
+
+static int handle_custom_request(args_t *args, const char *arg_value);
 
 static arg_e arg_type(const char *argument) {
     if (strcmp(argument, "-j") == 0)
@@ -24,6 +27,8 @@ static arg_e arg_type(const char *argument) {
         return ARG_CUSTOM_HOST;
     else if (strcmp(argument, "-v") == 0)
         return ARG_VERBOSE;
+    else if (strcmp(argument, "-f") == 0)
+        return ARG_OUT_FILE;
 
     else
         return -1;
@@ -85,11 +90,7 @@ void arg_parse(int argc, char **argv, args_t *args) {
                 continue;
             }
 
-            // this allocates
-            args->request.content = strdup(argv[i + 1]);
-            args->request.length = strlen(args->request.content);
-            printf("Custom request set as: %s\n", args->request.content);
-            G_custom_request_flag = 1;
+            handle_custom_request(args, argv[i + 1]);
             break;
 
         case ARG_CUSTOM_HOST:
@@ -118,9 +119,66 @@ void arg_parse(int argc, char **argv, args_t *args) {
             G_verbose_flag = 1;
             break;
 
+        case ARG_OUT_FILE:
+            if ((i + 1) > argc) {
+                fprintf(stderr, "Number of concurrent connections unspecified, assuming default\n");
+                continue;
+            }
+
+            args->out_file = fopen(argv[i + 1], "w");
+            if (args->out_file == NULL) {
+                perror("Failed to open file for stdout redirection");
+            }
+
+            break;
+
         case ARG_COUNT:
             fprintf(stderr, "Shouldn't be here");
             break;
         }
     }
 };
+
+static int handle_custom_request(args_t *args, const char *arg_value) {
+    const char *host_header = "Host:";
+    char *host_start = strcasestr(arg_value, host_header);
+    if (host_header == NULL) {
+        fprintf(stderr, "HTTP host unspecified in request, assuming default\n");
+        return -1;
+    }
+
+    // little bit of pointer arithmetic find the real start of the substring
+    host_start += strlen("Host:");
+
+    while (isspace(*host_start))
+        host_start++;
+
+    char *delimiter = strchr(host_start, ':');
+    if (delimiter == NULL) {
+        fprintf(stderr, "HTTP host format incorrect [ip:port], assuming default\n");
+        return -1;
+    }
+    int ip_length = delimiter - host_start;
+    memcpy(args->host.ip, host_start, ip_length);
+
+    char *first_port_digit = delimiter++;
+    char *eol = strstr(first_port_digit, "\r\n");
+    if (eol == NULL) {
+        fprintf(stderr, "HTTP host format incorrect [ip:port], assuming default\n");
+        return -1;
+    }
+    int port_length = eol - first_port_digit;
+
+    char *temp_port_string = malloc((sizeof(char) * port_length) + 1);
+    memcpy(temp_port_string, delimiter, port_length);
+    temp_port_string[port_length] = '\0';
+
+    args->host.port = atoi(temp_port_string);
+
+    // this allocates, so set a flag to remember to cleanup later
+    args->request.content = strdup(arg_value);
+    args->request.length = strlen(args->request.content);
+    G_custom_request_flag = 1;
+
+    return 1;
+}

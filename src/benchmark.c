@@ -220,8 +220,8 @@ static void *bench_worker(void *worker_args) {
 void calc_print_stats(const args_t *args, const worker_args_t *worker_datas, int n_workers,
                       double work_time) {
     // a little space here, huh
-    printf("\n\n");
-    printf("Total Work Time (includes socket creation, etc.) : %.9f\n", work_time);
+    fprintf(args->out_file, "\n\n");
+    fprintf(args->out_file, "Total Work Time (includes socket creation, etc.) : %.9f\n", work_time);
 
     int n_reqs_per_worker = args->n_requests / n_workers;
     int n_reqs_per_socket = n_reqs_per_worker / args->n_concurrent;
@@ -231,11 +231,11 @@ void calc_print_stats(const args_t *args, const worker_args_t *worker_datas, int
     double avg_latency_threads = 0.0;
 
     for (int t = 0; t < n_workers; t++) {
-        printf("Worker %d stats ----\n", t);
+        fprintf(args->out_file, "Worker %d stats ----\n", t);
 
         double avg_latency_thread = 0.0;
         for (int s = 0; s < args->n_concurrent; s++) {
-            printf("	Socket %d stats --\n", s);
+            fprintf(args->out_file, "	Socket %d stats --\n", s);
 
             double avg_latency_socket = 0.0;
             for (int i = 0; i < n_reqs_per_socket; i++) {
@@ -249,7 +249,8 @@ void calc_print_stats(const args_t *args, const worker_args_t *worker_datas, int
             }
             avg_latency_socket /= n_reqs_per_socket;
 
-            printf("	  Average request latency : %0.15f seconds\n", avg_latency_socket);
+            fprintf(args->out_file, "	  Average request latency : %0.15f seconds\n",
+                    avg_latency_socket);
 
             // we can free this socket's timing data now
             free(worker_datas[t].socket_datas[s].timings);
@@ -258,10 +259,12 @@ void calc_print_stats(const args_t *args, const worker_args_t *worker_datas, int
 
         double throughput_thread = n_reqs_per_worker / worker_datas[t].batch_time;
 
-        printf("\n	Worker batch time : %d requests in %0.9f seconds\n", n_reqs_per_worker,
-               worker_datas[t].batch_time);
-        printf("	Worker average request latency : %0.9f seconds\n", avg_latency_thread);
-        printf("	Worker request throughput : %0.9f requests/second\n", throughput_thread);
+        fprintf(args->out_file, "\n	Worker batch time : %d requests in %0.9f seconds\n",
+                n_reqs_per_worker, worker_datas[t].batch_time);
+        fprintf(args->out_file, "	Worker average request latency : %0.9f seconds\n",
+                avg_latency_thread);
+        fprintf(args->out_file, "	Worker request throughput : %0.9f requests/second\n",
+                throughput_thread);
 
         avg_throughput_threads += throughput_thread;
         avg_latency_threads += avg_latency_thread;
@@ -273,10 +276,13 @@ void calc_print_stats(const args_t *args, const worker_args_t *worker_datas, int
     avg_throughput_threads /= n_workers;
     avg_latency_threads /= n_workers;
 
-    printf("\n\n");
-    printf("Overall stats ----\n");
-    printf("	Average thread throughput : %0.9f\n", avg_throughput_threads);
-    printf("	Average thread latency : %0.9f\n", avg_latency_threads);
+    fprintf(args->out_file, "\n\n");
+    fprintf(args->out_file, "Overall stats ----\n");
+    fprintf(args->out_file, "	Average thread throughput : %0.9f\n", avg_throughput_threads);
+    fprintf(args->out_file, "	Average thread latency : %0.9f\n", avg_latency_threads);
+    if (args->out_file != stdout) {
+        printf("Results recorded in file\n");
+    }
 }
 
 void handle_send(int epoll_fd, socket_data_t *socket_data, request_t request) {

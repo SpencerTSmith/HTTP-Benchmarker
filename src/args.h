@@ -1,6 +1,8 @@
 #ifndef ARG_H
 #define ARG_H
 
+#include <stdio.h>
+
 #include "networking.h"
 
 typedef enum {
@@ -10,6 +12,7 @@ typedef enum {
     ARG_CUSTOM_REQUEST,
     ARG_CUSTOM_HOST,
     ARG_VERBOSE,
+    ARG_OUT_FILE,
     ARG_COUNT,
 } arg_e;
 
@@ -19,6 +22,7 @@ typedef struct {
     int n_concurrent;
     host_t host;
     request_t request;
+    FILE *out_file;
 } args_t;
 
 void arg_parse(int argc, char **argv, args_t *args);

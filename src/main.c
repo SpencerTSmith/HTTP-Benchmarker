@@ -9,6 +9,7 @@ int main(int argc, char **argv) {
         .n_concurrent = 10,
         .host = {.ip = "127.0.0.1", .port = 17299},
         .request = {.content = "GET / HTTP/1.1\r\nHost: 127.0.0.1:17299\r\n\r\n", .length = 41},
+        .out_file = stdout,
     };
 
     arg_parse(argc, argv, &args);
