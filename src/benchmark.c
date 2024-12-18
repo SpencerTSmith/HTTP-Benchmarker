@@ -4,6 +4,7 @@
 
 #include <liburing.h>
 #include <pthread.h>
+#include <stdalign.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
@@ -33,21 +34,33 @@ static void calc_print_stats(const args_t *args, const worker_args_t *worker_dat
 void bench_http_request(const args_t *args) {
     // just since we access it so much
     int n_threads = args->n_threads;
+    int n_reqs_per_worker = args->n_requests / n_threads;
+    int n_reqs_per_socket = n_reqs_per_worker / args->n_concurrent;
 
-    pthread_t *workers = calloc(n_threads, sizeof(pthread_t));
+    // we know exactly how much memory is needed up front
+    arena_t big_arena = {0};
+    uint64_t arena_size = n_threads * sizeof(pthread_t);
+    arena_size += n_threads * sizeof(worker_args_t);
+    arena_size += n_threads * n_reqs_per_worker * sizeof(socket_data_t);
+    arena_size += n_reqs_per_socket * sizeof(request_timing_t);
+    arena_size += 1024; // little extra for alignment stuff
+
+    arena_alloc(&big_arena, arena_size);
+
+    pthread_t *workers = arena_push(&big_arena, n_threads * sizeof(pthread_t), alignof(pthread_t));
     if (workers == NULL) {
         fprintf(stderr, "Thread id memory allocation failed");
         exit(EXT_ERROR_THREAD_ID_ALLOCATE);
     }
 
-    worker_args_t *worker_args = calloc(n_threads, sizeof(worker_args_t));
+    worker_args_t *worker_args =
+        arena_push(&big_arena, n_threads * sizeof(worker_args_t), alignof(worker_args_t));
     if (workers == NULL) {
         fprintf(stderr, "Thread args memory allocation failed");
         exit(EXT_ERROR_THREAD_ARGS_ALLOCATE);
     }
 
     // start up workers
-    int n_reqs_per_worker = args->n_requests / n_threads;
     for (int i = 0; i < n_threads; i++) {
         worker_args[i] = (worker_args_t){
             .n_requests = n_reqs_per_worker,
@@ -58,7 +71,8 @@ void bench_http_request(const args_t *args) {
             .socket_datas = NULL,
         };
         // memory for runtime dependent num sockets
-        worker_args[i].socket_datas = calloc(n_reqs_per_worker, sizeof(socket_data_t));
+        worker_args[i].socket_datas = arena_push(
+            &big_arena, n_reqs_per_worker * sizeof(socket_data_t), alignof(socket_data_t));
         if (worker_args[i].socket_datas == NULL) {
             fprintf(stderr, "Socket data memory allocation failed");
             exit(EXT_ERROR_SOCKET_DATA_ALLOCATE);
@@ -105,8 +119,7 @@ void bench_http_request(const args_t *args) {
     if (custom_request_flag()) {
         free(args->request.content);
     }
-    free(workers);
-    free(worker_args);
+    arena_free(&big_arena);
 }
 
 static void handle_send(int epoll_fd, socket_data_t *socket_data, request_t request);

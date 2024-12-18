@@ -1,6 +1,7 @@
 #ifndef BENCHMARK_H
 #define BENCHMARK_H
 
+#include "arena.h"
 #include "args.h"
 
 typedef enum {
@@ -21,6 +22,7 @@ typedef enum {
     EXT_ERROR_EPOLL_CREATE,
     EXT_ERROR_EPOLL_ADD_EVENT,
     EXT_ERROR_EPOLL_WAIT,
+    EXT_ERROR_ARENA_ALLOCATION,
     EXT_CODE_COUNT,
 } exit_code_e;
 

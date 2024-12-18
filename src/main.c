@@ -1,6 +1,8 @@
 #include "args.h"
 #include "benchmark.h"
 
+#include <pthread.h>
+
 int main(int argc, char **argv) {
     // sensible defaults
     args_t args = {
